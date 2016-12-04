@@ -464,7 +464,10 @@ class Field:
                 outer_init += ', '.join([inner_init] * self.max_count)
                 outer_init += '}'
             elif self.rules == 'OPTIONAL':
-                outer_init = 'false, ' + inner_init
+                if null_init or self.default is None:
+                    outer_init = 'false, ' + inner_init
+                else:
+                    outer_init = 'true, ' + inner_init
             else:
                 outer_init = inner_init
         elif self.allocation == 'POINTER':
