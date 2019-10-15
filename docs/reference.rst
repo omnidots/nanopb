@@ -53,6 +53,12 @@ PB_SYSTEM_HEADER               Replace the standard header files with a single
                                functions and typedefs listed on the
                                `overview page`_. Value must include quotes,
                                for example *#define PB_SYSTEM_HEADER "foo.h"*.
+PB_WITHOUT_64BIT               Disable 64-bit support, for old compilers or
+                               for a slight speedup on 8-bit platforms.
+PB_ENCODE_ARRAYS_UNPACKED      Don't encode scalar arrays as packed.
+                               This is only to be used when the decoder on the
+                               receiving side cannot process packed scalar
+                               arrays. Such example is older protobuf.js.
 ============================  ================================================
 
 The PB_MAX_REQUIRED_FIELDS, PB_FIELD_16BIT and PB_FIELD_32BIT settings allow
@@ -93,7 +99,10 @@ no_unions                      Generate 'oneof' fields as optional fields
 msgid                          Specifies a unique id for this message type.
                                Can be used by user code as an identifier.
 anonymous_oneof                Generate 'oneof' fields as anonymous unions.
-fixed_length                   Generate 'bytes' fields with constant length.
+fixed_length                   Generate 'bytes' fields with constant length
+                               (max_size must also be defined).
+fixed_count                    Generate arrays with constant length
+                               (max_count must also be defined).
 ============================  ================================================
 
 These options can be defined for the .proto files before they are converted
@@ -152,8 +161,20 @@ options from it. The file format is as follows:
   it makes sense to define wildcard options first in the file and more specific
   ones later.
   
-If preferred, the name of the options file can be set using the command line
-switch *-f* to nanopb_generator.py.
+To debug problems in applying the options, you can use the *-v* option for the
+plugin. Plugin options are specified in front of the output path:
+
+    protoc ... --nanopb_out=-v:. message.proto
+
+Protoc doesn't currently pass include path into plugins. Therefore if your
+*.proto* is in a subdirectory, nanopb may have trouble finding the associated
+*.options* file. A workaround is to specify include path separately to the
+nanopb plugin, like:
+
+    protoc -Isubdir --nanopb_out=-Isubdir:. message.proto
+  
+If preferred, the name of the options file can be set using plugin argument
+*-f*.
 
 Defining the options on command line
 ------------------------------------
@@ -179,7 +200,7 @@ nanopb.proto can be found. This file, in turn, requires the file
 */usr/include*. Therefore, to compile a .proto file which uses options, use a
 protoc command similar to::
 
-    protoc -I/usr/include -Inanopb/generator -I. -omessage.pb message.proto
+    protoc -I/usr/include -Inanopb/generator -I. --nanopb_out=. message.proto
 
 The options can be defined in file, message and field scopes::
 
@@ -189,13 +210,6 @@ The options can be defined in file, message and field scopes::
         option (nanopb_msgopt).max_size = 30; // Message scope
         required string fieldsize = 1 [(nanopb).max_size = 40]; // Field scope
     }
-
-
-
-
-
-
-
 
 
 pb.h

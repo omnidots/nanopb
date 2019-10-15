@@ -27,14 +27,18 @@
  * from the server. The filenames will be printed out immediately, so that
  * no memory has to be allocated for them.
  */
-bool printfile_callback(pb_istream_t *stream, const pb_field_t *field, void **arg)
+bool ListFilesResponse_callback(pb_istream_t *istream, pb_ostream_t *ostream, const pb_field_iter_t *field)
 {
-    FileInfo fileinfo = {};
-    
-    if (!pb_decode(stream, FileInfo_fields, &fileinfo))
-        return false;
-    
-    printf("%-10lld %s\n", (long long)fileinfo.inode, fileinfo.name);
+    PB_UNUSED(ostream);
+    if (istream != NULL && field->tag == ListFilesResponse_file_tag)
+    {
+        FileInfo fileinfo = {};
+
+        if (!pb_decode(istream, FileInfo_fields, &fileinfo))
+            return false;
+
+        printf("%-10lld %s\n", (long long)fileinfo.inode, fileinfo.name);
+    }
     
     return true;
 }
@@ -49,7 +53,6 @@ bool listdir(int fd, char *path)
     {
         ListFilesRequest request = {};
         pb_ostream_t output = pb_ostream_from_socket(fd);
-        uint8_t zero = 0;
         
         /* In our protocol, path is optional. If it is not given,
          * the server will list the root directory. */
@@ -71,14 +74,11 @@ bool listdir(int fd, char *path)
         
         /* Encode the request. It is written to the socket immediately
          * through our custom stream. */
-        if (!pb_encode(&output, ListFilesRequest_fields, &request))
+        if (!pb_encode_delimited(&output, ListFilesRequest_fields, &request))
         {
             fprintf(stderr, "Encoding failed: %s\n", PB_GET_ERROR(&output));
             return false;
         }
-        
-        /* We signal the end of request with a 0 tag. */
-        pb_write(&output, &zero, 1);
     }
     
     /* Read back the response from server */
@@ -86,11 +86,7 @@ bool listdir(int fd, char *path)
         ListFilesResponse response = {};
         pb_istream_t input = pb_istream_from_socket(fd);
         
-        /* Give a pointer to our callback function, which will handle the
-         * filenames as they arrive. */
-        response.file.funcs.decode = &printfile_callback;
-        
-        if (!pb_decode(&input, ListFilesResponse_fields, &response))
+        if (!pb_decode_delimited(&input, ListFilesResponse_fields, &response))
         {
             fprintf(stderr, "Decode failed: %s\n", PB_GET_ERROR(&input));
             return false;

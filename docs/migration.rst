@@ -11,6 +11,181 @@ are included, in order to make it easier to find this document.
 
 .. contents ::
 
+Nanopb-0.4.0 (future)
+=====================
+
+New field descriptor format
+---------------------------
+
+**Rationale:** Previously information about struct fields was stored as an array
+of `pb_field_t` structures. This was a straightforward method, but required
+allocating space for e.g. submessage type and array size for all fields, even
+though most fields are not submessages nor arrays.
+
+**Changes:** Now field information is encoded more efficiently in `uint32_t`
+array in a variable-length format. Old `pb_field_t` structure has been removed
+and it is now a typedef for `pb_field_iter_t`. This retains compatibility with
+most old callback definitions. The field definitions in `.pb.h` files are now
+of type `pb_msgdesc_t`.
+
+**Required actions:** If your own code accesses the low-level field information
+in `pb_field_t`, it must be modified to do so only through the functions declared
+in `pb_common.h`.
+
+**Error indications:** `incompatible pointer type` errors relating to `pb_field_t`
+
+
+Changes to generator default options
+------------------------------------
+
+**Rationale:** Previously nanopb_generator added a timestamp header to generated
+files and used only basename of files in `#include` directives. This is different
+than what the `protoc` C++ backend does.
+
+**Changes:** Now default options are `--no-timestamp` and `--no-strip-path`.
+
+**Required actions:** If old behaviour is desired, add `--timestamp` and
+`--strip-path` options to `nanopb_generator.py` or on `protoc` command line
+as `--nanopb_out=--timestamp,--strip-path:outdir`.
+
+**Error indications:** Compiler error: cannot find include file `mymessage.pb.h`
+when compiling `mymessage.pb.c`.
+
+Removal of bundled plugin.proto
+-------------------------------
+
+**Rationale:** Google's Python protobuf library, which is used in nanopb
+generator, has included `plugin_pb2` with it since version 3.1.0. It is
+not necessary to bundle it with nanopb anymore.
+
+**Required actions:** Update `python-protobuf` to version 3.1.0 or newer.
+
+**Error indications:** `ImportError: No module named compiler.plugin_pb2`
+
+.options file is now always case-sensitive
+------------------------------------------
+
+**Rationale:** Previously field names in `.options` file were case-sensitive
+on Linux and case-insensitive on Windows. This was by accident. Because
+`.proto` files are case-sensitive, `.options` files should be too.
+
+**Changes:** Now field names in `.options` are always case-sensitive, and
+matched by `fnmatchcase()` instead of `fnmatch()`.
+
+**Required actions:** If field names in `.options` are not capitalized the
+same as in `.proto`, they must be updated.
+
+*CHAR_BIT* define is now needed
+-------------------------------
+**Rationale:** To check whether the platform has 8-bit or larger chars, the
+C standard *CHAR_BIT* macro is needed.
+
+**Changes:** *pb.h* now includes *limits.h* for this macro.
+
+**Required actions:** If your platform doesn't have *limits.h* available, you
+can define the macro in *pb_syshdr.h*. There is an example in *extra* directory.
+
+**Error indications:** "Cannot find include file <limits.h>." or "Undefined
+identifier: CHAR_BIT."
+
+Strings must now always be null-terminated
+------------------------------------------
+**Rationale:** Previously *pb_encode()* would accept non-terminated strings and
+assume that they are the full length of the defined array. However, *pb_decode()*
+would reject such messages because null terminator wouldn't fit in the array.
+
+**Changes:** *pb_encode()* will now return an error if null terminator is missing.
+Maximum encoded message size calculation is changed accordingly so that at most
+*max_size-1* strings are assumed. New field option *max_length* can be used to
+define the maximum string length, instead of the array size.
+
+**Required actions:** If your strings were previously filling the whole allocated
+array, increase the size of the field by 1.
+
+**Error indications:** *pb_encode()* returns error *unterminated string*.
+
+Removal of per-field default value constants
+--------------------------------------------
+**Rationale:** Previously nanopb declared a `fieldname_default` constant variable
+for each field with a default value, and used these internally to initialize messages.
+This however used unnecessarily large amount of storage for the values. The variables
+were mostly for internal usage, but were available in the header file.
+
+**Changes:** Default values are now stored as an encoded protobuf message.
+
+**Required actions:** If your code previously used default constants, it will have to
+be adapted to take the default value in some other way, such as by accessing
+`static const MyMessage msg_default = MyMessage_init_default;` and `msg_default.fieldname`.
+
+**Error indications:** Compiler error about `fieldname_default` being undeclared.
+
+Zero tag in message now raises error by default
+-----------------------------------------------
+**Rationale:** Previously nanopb has allowed messages to be terminated by a null byte,
+which is read as zero tag value. Most other protobuf implementations don't support this,
+so it is not very useful feature. It has also been noted that this can complicate
+debugging issues with corrupted messages.
+
+**Changes:** `pb_decode()` now gives error when it encounters zero tag value. A new
+function `pb_decode_ex()` supports flag `PB_DECODE_NULLTERMINATED` that supports
+decoding null terminated messages.
+
+**Required actions:** If application uses null termination for messages, switch it to
+use `pb_decode_ex()` and `pb_encode_ex()`. If compatibility with 0.3.9.x is needed,
+there are also `pb_decode_nullterminated()` and `pb_encode_nullterminated()` macros,
+which work both in 0.4.0 and 0.3.9.
+
+**Error indications:** Error message from `pb_decode()`: 'zero_tag'.
+
+Nanopb-0.3.9.4, 0.4.0 (2019-xx-xx)
+==================================
+
+Fix generation of min/max defines for enum types
+------------------------------------------------
+
+**Rationale:** Nanopb generator makes #defines for enum minimum and maximum
+value. Previously these defines incorrectly had the first and last enum value,
+instead of the actual minimum and maximum. (issue #405)
+
+**Changes:** Minimum define now always has the smallest value, and maximum
+define always has the largest value.
+
+**Required actions:** If these defines are used and enum values in .proto file
+are not defined in ascending order, user code behaviour may change. Check that
+user code doesn't expect the old, incorrect first/last behaviour.
+
+Fix undefined behavior related to bool fields
+---------------------------------------------
+
+**Rationale:** In C99, `bool` variables are not allowed to have other values
+than `true` and `false`. Compilers use this fact in optimization, and constructs
+like `int foo = msg.has_field ? 100 : 0` will give unexpected results otherwise.
+Previously nanopb didn't enforce that decoded bool fields had valid values.
+
+**Changes:** Bool fields are now handled separately as `PB_LTYPE_BOOL`. The
+`LTYPE` descriptor numbers for other field types were renumbered.
+
+**Required actions:** Source code files must be recompiled, but regenerating
+`.pb.h`/`.pb.c` files from `.proto` is not required. If user code directly uses
+the nanopb internal field representation (search for `PB_LTYPE_VARINT` in source),
+it may need updating.
+
+Nanopb-0.3.9.1, 0.4.0 (2018-04-14)
+==================================
+
+Fix handling of string and bytes default values
+-----------------------------------------------
+
+**Rationale:** Previously nanopb didn't properly decode special character
+escapes like \\200 emitted by protoc. This caused these escapes to end up
+verbatim in the default values in .pb.c file.
+
+**Changes:** Escapes are now decoded, and e.g. "\\200" or "\\x80" results in
+{0x80} for bytes field and "\\x80" for string field.
+
+**Required actions:** If code has previously relied on '\\' in default value
+being passed through verbatim, it must now be changed to '\\\\'.
+
 Nanopb-0.3.8 (2017-03-05)
 =========================
 
