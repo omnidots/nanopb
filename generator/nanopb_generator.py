@@ -36,7 +36,10 @@ except:
     raise
 
 try:
-    from .proto import nanopb_pb2 as nanopb_pb2
+    try:
+        from proto import nanopb_pb2 as nanopb_pb2
+    except ModuleNotFoundError:
+        from .proto import nanopb_pb2 as nanopb_pb2
 except TypeError:
     sys.stderr.write('''
          ****************************************************************************
