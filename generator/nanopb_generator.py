@@ -38,7 +38,7 @@ except:
 try:
     try:
         from proto import nanopb_pb2 as nanopb_pb2
-    except ModuleNotFoundError:
+    except ImportError:
         from .proto import nanopb_pb2 as nanopb_pb2
 except TypeError:
     sys.stderr.write('''
